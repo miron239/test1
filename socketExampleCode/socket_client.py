@@ -15,6 +15,7 @@ from data.config_data import ConfigData
 
 ack_event = threading.Event()  # 用於等待 ACK 回應
 send_lock = threading.Lock()   # 防止同時送出封包
+updating_event = threading.Event()
 
 def socket_listener(sock):
     # 監聽遠端資料回應 / Listen and handle socket input
@@ -101,19 +102,20 @@ def get_full_packet_length(data: bytes, offset: int, available: int) -> int:
 
 
 def heartbeat_sender(sock):
-    # 定時送出心跳封包 / Send heartbeat every 60 seconds
+    # 定時送出心跳封包 / Send heartbeat every 10 seconds
     while True:
         try:
-            packet = build_action(SocketCommand.SOCKET_ACTION_CMD_HEARTBEAT)
-            ack_event.clear()
-            with send_lock:
-                sock.sendall(packet)
-                print(f"[HEARTBEAT] Sent 0x{SocketCommand.SOCKET_ACTION_CMD_HEARTBEAT:02X} (heartbeat)")
-            if not ack_event.wait(timeout=30):
-                print("[HEARTBEAT] Timeout waiting for ACK.")
-                break
-            else:
-                print("[HEARTBEAT] Got ACK")
+            if not updating_event.is_set():
+                packet = build_action(SocketCommand.SOCKET_ACTION_CMD_HEARTBEAT)
+                ack_event.clear()
+                with send_lock:
+                    sock.sendall(packet)
+                    print(f"[HEARTBEAT] Sent 0x{SocketCommand.SOCKET_ACTION_CMD_HEARTBEAT:02X} (heartbeat)")
+                if not ack_event.wait(timeout=30):
+                    print("[HEARTBEAT] Timeout waiting for ACK.")
+                    break
+                else:
+                    print("[HEARTBEAT] Got ACK")
         except Exception as e:
             print(f"[HEARTBEAT] Error: {e}")
             break
@@ -231,17 +233,21 @@ def main_loop(host, port):
                     packet = build_setup(SocketCommand.SOCKET_SETUP_SET_AT_MT_MODE, [0x01])
                     send_socket_data(s, packet)
                 elif user_input == "1":
+                    updating_event.set()
                     upgrade_apk("app-release.apk", s)
+                    updating_event.clear()
                 elif user_input == "2":
+                    updating_event.set()
                     upgrade_sdc("NC7500.sd6", s)
+                    updating_event.clear()
                 elif user_input == "3":
                     packet = build_action(SocketCommand.SOCKET_ACTION_CMD_ASK_STATUS)
                     send_socket_data(s, packet)
                 elif user_input == "4":
                     ConfigData.MaxNotes = 100
                     ConfigData.ftpusername = "user"
-                    ConfigData.ftppassword = "P@ss-W0rd"
-                    ConfigData.ftpserver = "192.168.1.253:21"
+                    ConfigData.ftppassword = "123456"
+                    ConfigData.ftpserver = "192.168.88.97:2121"
                     ConfigData.enableftp = True
                     ConfigData.extaddress = "192.168.1.101"
                     ConfigData.extnetmask = "255.255.255.128"
